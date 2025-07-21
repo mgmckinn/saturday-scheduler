@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Workload Tracker - Saturday Schedule</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            :root {
+                --investment-blue: #003366;
+                --attentive-gold: #FFD700;
+                --light-gray: #f0f2f5;
+                --dark-gray: #333;
+            }
+
+            body {
+                font-family: 'Inter', sans-serif;
+                background-color: var(--light-gray);
+                color: var(--dark-gray);
+            }
+
+            .header {
+                background-color: var(--investment-blue);
+                color: white;
+            }
+
+            .button-red {
+                background-color: #dc2626;
+                color: white;
+                font-weight: bold;
+                transition: background-color 0.3s;
+            }
+
+            .button-red:hover {
+                background-color: #b91c1c;
+            }
+
+            .card {
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+
+            .nav-link {
+                color: var(--attentive-gold);
+                text-decoration: none;
+                font-weight: 500;
+                transition: color 0.3s;
+            }
+
+            .nav-link:hover {
+                color: white;
+            }
+
+        </style>
+    </head>
+
+    <body class="flex flex-col min-h-screen">
+        <header class="header p-4 shadow-md">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">Workload Tracker</h1>
+                <nav>
+                    <a href="./mainpage.html" class="nav-link mx-2">Main Page</a>
+                    <a href="./saturdayschedulehistory.html" class="nav-link mx-2">Schedule History</a>
+                </nav>
+            </div>
+        </header>
+
+        <main class="flex-grow container mx-auto p-4 md:p-8">
+            <div class="card p-6 max-w-2xl mx-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-investment-blue">Team Workload</h2>
+                    <button id="resetTrackerBtn" class="button-red py-2 px-4 rounded-md">Reset Tracker</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="py-2 px-4 text-left text-gray-600 font-semibold">Team Member</th>
+                                <th class="py-2 px-4 text-left text-gray-600 font-semibold">Shifts Worked</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trackerTableBody">
+                            <!-- Data will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="messageBox" class="hidden mt-4 p-3 rounded-md text-center"></div>
+            </div>
+        </main>
+
+        <footer class="bg-gray-200 text-center p-4">
+            <p class="text-sm text-gray-600">&copy; 2024 Saturday Schedule App. All rights reserved.</p>
+        </footer>
+
+        <script type="module">
+            import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+            import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+            import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'saturday-schedule-app';
+
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+
+            let userId = null;
+            let unsubscribeTracker = null;
+
+            const teamMembers = [
+                "Alice", "Bob", "Charlie", "David", "Eve",
+                "Frank", "Grace", "Heidi", "Ivan", "Judy"
+            ];
+
+            const trackerTableBody = document.getElementById('trackerTableBody');
+            const resetTrackerBtn = document.getElementById('resetTrackerBtn');
+            const messageBox = document.getElementById('messageBox');
+
+            function showMessage(message, isError = false) {
+                messageBox.textContent = message;
+                messageBox.className = `mt-4 p-3 rounded-md text-center ${ isError ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700' }`;
+                messageBox.classList.remove('hidden');
+                setTimeout(() => messageBox.classList.add('hidden'), 3000);
+            }
+
+            function displayTracker(workload) {
+                trackerTableBody.innerHTML = '';
+                if (!workload || Object.keys(workload).length === 0) {
+                    teamMembers.forEach(member => {
+                        const row = `<tr>
+                        <td class="py-2 px-4 border-b">${ member }</td>
+                        <td class="py-2 px-4 border-b">0</td>
+                    </tr>`;
+                        trackerTableBody.innerHTML += row;
+                    });
+                    return;
+                }
+
+                const sortedMembers = Object.keys(workload).sort((a, b) => workload[b] - workload[a]);
+
+                sortedMembers.forEach(member => {
+                    const row = `<tr>
+                    <td class="py-2 px-4 border-b">${ member }</td>
+                    <td class="py-2 px-4 border-b">${ workload[member] }</td>
+                </tr>`;
+                    trackerTableBody.innerHTML += row;
+                });
+            }
+
+            resetTrackerBtn.addEventListener('click', async () => {
+                if (!userId) return;
+                if (confirm("Are you sure you want to reset the workload tracker? This action cannot be undone.")) {
+                    const trackerRef = doc(db, "artifacts", appId, "users", userId, "workload", "tracker");
+                    const initialTracker = {};
+                    teamMembers.forEach(member => initialTracker[member] = 0);
+                    try {
+                        await setDoc(trackerRef, initialTracker);
+                        showMessage("Workload tracker has been reset.", false);
+                    } catch (error) {
+                        console.error("Error resetting tracker: ", error);
+                        showMessage("Failed to reset tracker.", true);
+                    }
+                }
+            });
+
+            function setupTrackerListener() {
+                if (unsubscribeTracker) unsubscribeTracker(); // Detach old listener
+
+                const trackerRef = doc(db, "artifacts", appId, "users", userId, "workload", "tracker");
+                unsubscribeTracker = onSnapshot(trackerRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        displayTracker(docSnap.data());
+                    } else {
+                        // If no data, display with all zeros
+                        const initialTracker = {};
+                        teamMembers.forEach(member => initialTracker[member] = 0);
+                        displayTracker(initialTracker);
+                    }
+                }, (error) => {
+                    console.error("Error listening to tracker updates:", error);
+                    showMessage("Could not load workload data.", true);
+                });
+            }
+
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    setupTrackerListener();
+                } else {
+                    try {
+                        const userCredential = await signInAnonymously(auth);
+                        userId = userCredential.user.uid;
+                        setupTrackerListener();
+                    } catch (error) {
+                        console.error("Anonymous sign-in failed:", error);
+                        showMessage("Could not connect to the server. Please refresh the page.", true);
+                    }
+                }
+            });
+        </script>
+    </body>
+
+</html>
